@@ -2,24 +2,23 @@ import streamlit as st
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 from googleapiclient.discovery import build
 import re
-from rewriter import rewrite_sentence
+
+# Import from your rewriter.py
+from rewriter import rewrite_sentence, detect_sentiment
 
 st.title("🌟 Positive Language Rewriter for YouTube Comments")
 
-# Input for YouTube video URL
 video_url = st.text_input("🎥 Enter YouTube Video URL")
 
-# Cache model loading to avoid reloading every time
 @st.cache_resource
 def load_model():
     model = T5ForConditionalGeneration.from_pretrained("ramsrigouthamg/t5_paraphraser")
     tokenizer = T5Tokenizer.from_pretrained("ramsrigouthamg/t5_paraphraser")
     return model, tokenizer
-
 model, tokenizer = load_model()
 
 def paraphrase(text):
-    input_text = "paraphrase: " + text + " </s>"
+    input_text = "paraphrase this sentence with positive tone: " + text + " </s>"
     encoding = tokenizer.encode_plus(input_text, return_tensors="pt")
     output = model.generate(
         input_ids=encoding["input_ids"],
@@ -30,7 +29,6 @@ def paraphrase(text):
     )
     return tokenizer.decode(output[0], skip_special_tokens=True)
 
-# Function to fetch YouTube comments using API key
 def get_youtube_comments(video_url, api_key, max_comments=20):
     video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url)
     if not video_id_match:
@@ -50,8 +48,7 @@ def get_youtube_comments(video_url, api_key, max_comments=20):
         comments.append(comment)
     return comments
 
-# Your YouTube Data API key here:
-API_KEY = "AIzaSyCu_hzuexqxmRXCTIV0qNi0ZKS8TElFk4Q"  # <-- Replace this with your actual key
+API_KEY = "AIzaSyCu_hzuexqxmRXCTIV0qNi0ZKS8TElFk4Q"  # <-- Use your real API key here
 
 comments = []
 if video_url:
@@ -62,23 +59,32 @@ if video_url:
     except Exception as e:
         st.error(f"Error fetching comments: {e}")
 
-if comments:
-    selected_comment = st.selectbox("💬 Select a comment to rewrite:", comments)
+selected_comment = st.selectbox("💬 Select a comment to analyze & rewrite:", comments) if comments else None
+
+if selected_comment:
+    sentiment = detect_sentiment(selected_comment)
+    st.markdown(f"**Sentiment:** :{'smile:' if sentiment=='Positive' else 'cry:' if sentiment=='Negative' else 'neutral_face:'} {sentiment}")
+
+    if sentiment == "Negative":
+        if st.button("🔁 Rewrite to Positive"):
+            rewritten_basic = rewrite_sentence(selected_comment)
+            rewritten_advanced = paraphrase(selected_comment)
+            st.subheader("✅ Rewritten Comment (Basic):")
+            st.success(rewritten_basic)
+            st.subheader("✅ Rewritten Comment (Advanced - AI):")
+            st.success(rewritten_advanced)
+    elif sentiment == "Neutral":
+        st.info("This comment seems neutral. You can still rewrite if you want.")
+        if st.button("🔁 Rewrite Anyway"):
+            rewritten_basic = rewrite_sentence(selected_comment)
+            rewritten_advanced = paraphrase(selected_comment)
+            st.subheader("✅ Rewritten Comment (Basic):")
+            st.success(rewritten_basic)
+            st.subheader("✅ Rewritten Comment (Advanced - AI):")
+            st.success(rewritten_advanced)
+    else:  # Positive
+        st.success("This comment is already positive! 🎉 No rewrite needed.")
+
 else:
-    selected_comment = None
+    st.warning("Please select a comment to analyze.")
 
-if st.button("🔁 Rewrite Comment"):
-    if selected_comment:
-        # Use your rewrite_sentence for simple word replacements
-        rewritten_basic = rewrite_sentence(selected_comment)
-        
-        # Paraphrase advanced rewriting
-        rewritten_advanced = paraphrase(selected_comment)
-
-        st.subheader("✅ Rewritten Comment (Basic):")
-        st.success(rewritten_basic)
-
-        st.subheader("✅ Rewritten Comment (Advanced - Paraphrased):")
-        st.success(rewritten_advanced)
-    else:
-        st.warning("Please select a comment to rewrite.")
